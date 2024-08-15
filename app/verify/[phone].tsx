@@ -1,4 +1,5 @@
 import Colors from "@/constants/Colors";
+import { isClerkAPIResponseError, useSignIn, useSignUp } from "@clerk/clerk-expo";
 // import { useSignUp, isClerkAPIResponseError, useSignIn } from '@clerk/clerk-expo';
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
@@ -24,6 +25,8 @@ const Page = () => {
     value: code,
     setValue: setCode,
   });
+  const {signUp , setActive} = useSignUp();
+  const {signIn} = useSignIn();
 
   useEffect(() => {
     if (code.length === 6) {
@@ -36,12 +39,65 @@ const Page = () => {
   }, [code]);
 
   const verifyCode = async () => {
-    
+    try {
+      await signUp!.attemptPhoneNumberVerification({
+        code,
+      
+      })
+      await setActive!({session: signUp!.createdSessionId})
+    } catch (err) {
+      if(isClerkAPIResponseError(err)){
+        Alert.alert("Error", err.errors[0].message)
+      }
+    }
   };
 
-  const verifySignIn = async () => {};
+  const verifySignIn = async () => {
+    try {
+      await signIn!.attemptFirstFactor({
+        strategy: 'phone_code',
+        code,
+      })
+      await setActive!({session: signIn!.createdSessionId})
+    } catch (err) {
+      console.log('error', JSON.stringify(err,null,2))
+      if(isClerkAPIResponseError(err)){
+        Alert.alert("Error", err.errors[0].message)
+      }
+    }
+  };
 
-  const resendCode = async () => {};
+  const resendCode = async () => {
+   try{
+    if (signIn === 'true'){
+      const {supportedFirstFactors} = await signIn!.create({
+        identifier: phone,
+      })
+
+      const firstPhoneFactor : any = supportedFirstFactors.find((factor:any)=>{
+        return factor.strategy === 'phone_code';
+      })
+
+      const {phoneNumberId} = firstPhoneFactor
+
+      await signIn!.prepareFirstFactor({
+        strategy: 'phone_code',
+        phoneNumberId,
+      })
+
+    }else{
+      await signUp!.create({
+        phoneNumber: phone,
+      })
+      signUp!.preparePhoneNumberVerification();
+    }
+   }catch(err){
+    console.log('error', JSON.stringify(err,null,2))
+    if(isClerkAPIResponseError(err)){
+      Alert.alert("Error", err.errors[0].message)
+    }
+   }
+  };
 
   return (
     <View style={styles.container}>

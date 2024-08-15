@@ -1,5 +1,6 @@
 import {
-    ActivityIndicator,
+  ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -15,26 +16,31 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MaskInput from "react-native-mask-input";
+import {
+  isClerkAPIResponseError,
+  useSignIn,
+  useSignUp,
+} from "@clerk/clerk-expo";
 
 //phone number masking you can create your own mask
 const GER_PHONE = [
-    `+`,
-    /\d/,
-    /\d/,
-    /\d/,
-    ' ',
-    /\d/,
-    /\d/,
-    /\d/,
-    ' ',
-    /\d/,
-    /\d/,
-    /\d/,
-    ' ',
-    /\d/,
-    /\d/,
-    /\d/,
-  ];
+  `+`,
+  /\d/,
+  /\d/,
+  /\d/,
+  " ",
+  /\d/,
+  /\d/,
+  /\d/,
+  " ",
+  /\d/,
+  /\d/,
+  /\d/,
+  " ",
+  /\d/,
+  /\d/,
+  /\d/,
+];
 
 const Page = () => {
   const [loading, setLoading] = useState(false);
@@ -42,31 +48,69 @@ const Page = () => {
   const router = useRouter();
   const keyboardVerticalOffset = Platform.OS === "ios" ? 90 : 0;
   const { bottom } = useSafeAreaInsets();
+  const { signUp, setActive } = useSignUp();
+  const { signIn } = useSignIn();
+
   const openLink = () => {
     Linking.openURL("https://google.com");
   };
 
   const sendOTP = async () => {
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      await signUp!.create({
+        phoneNumber,
+      });
+
+      signUp!.preparePhoneNumberVerification();
+
       router.push(`/verify/${phoneNumber}`);
-    }, 1000);
+    } catch (err) {
+      console.log(err);
+      if (isClerkAPIResponseError(err)) {
+        if (err.errors[0].code === "form_identifier_exists") {
+          console.log("user exists");
+          await trySignIn();
+        } else {
+          setLoading(false);
+          Alert.alert("Error", err.errors[0].message);
+        }
+      }
+    }
   };
 
-  const trySignIn = async () => {};
+  const trySignIn = async () => {
+    const { supportedFirstFactors } = await signIn!.create({
+      identifier: phoneNumber,
+    });
+
+    const firstPhoneFactor: any = supportedFirstFactors.find((factor: any) => {
+      return factor.strategy === "phone_code";
+    });
+
+    const { phoneNumberId } = firstPhoneFactor;
+
+    await signIn!.prepareFirstFactor({
+      strategy: "phone_code",
+      phoneNumberId,
+    });
+
+    router.push(`/verify/${phoneNumber}?signin=true`);
+    setLoading(false);
+  };
 
   return (
     <KeyboardAvoidingView
-    keyboardVerticalOffset={keyboardVerticalOffset}
-    style={{ flex: 1 }}
-    behavior="padding">
-    {loading && (
-      <View style={[StyleSheet.absoluteFill, styles.loading]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={{ fontSize: 18, padding: 10 }}>Sending code...</Text>
-      </View>
-    )}
+      keyboardVerticalOffset={keyboardVerticalOffset}
+      style={{ flex: 1 }}
+      behavior="padding"
+    >
+      {loading && (
+        <View style={[StyleSheet.absoluteFill, styles.loading]}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={{ fontSize: 18, padding: 10 }}>Sending code...</Text>
+        </View>
+      )}
       <StatusBar barStyle="dark-content" />
       <View style={styles.container}>
         <Text style={styles.description}>
@@ -90,9 +134,7 @@ const Page = () => {
             mask={GER_PHONE}
             style={styles.input}
           />
-
         </View>
-
 
         <Text style={styles.legal}>
           You must be{" "}
